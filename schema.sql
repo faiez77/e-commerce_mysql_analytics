@@ -62,11 +62,6 @@ INSERT INTO order_items VALUES
 (6, 1004, 105, 1),
 (7, 1005, 101, 1);
 
-(select * from orders o   JOIN order_items oi ON o.order_id = oi.order_id  
-                          JOIN products p ON oi.product_id = p.product_id;
-
-  
-)
 -- Monthly Revenue
 SELECT 
   DATE_FORMAT(o.order_date, '%Y-%m') AS month,
