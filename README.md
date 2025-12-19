@@ -12,11 +12,21 @@ Customer Lifetime Value (CLV)
 
 Top‑performing products and categories
 
+Customer Segmentation Using RFM analysis .
+
+## Business Questions Answered
+- How is monthly revenue trending?
+- What is the month-over-month sales growth?
+- Which products and categories generate the most revenue?
+- Who are the most valuable customers?
+- Which customers are at risk of churn?
+
 The goal is to convert raw transactional data into decision‑ready insights.
 
 🔹 Dataset Description
 
 The data is synthetic (sample data) but modeled after real production schemas.
+
 
 Tables Used
 
@@ -50,7 +60,7 @@ category	Product category
 price	Unit price
 
 
-Note: We are using window function which is compatible with MYSQL 8.0+ only.
+Note: We are using window function which is compatible with MYSQL 8.0+ and MYSQL workbench only.
 
 
 
