@@ -152,3 +152,77 @@ FROM (
   GROUP BY c.customer_name
 ) a;
 
+-- Base RFM metrics :Recency , Frequency , Monetary
+CREATE VIEW rfm_base AS
+SELECT
+    c.customer_id,
+    c.customer_name,
+
+    DATEDIFF(CURDATE(), MAX(o.order_date)) AS recency,
+
+    COUNT(DISTINCT o.order_id) AS frequency,
+
+    SUM(oi.quantity * p.price) AS monetary
+    
+FROM customers c
+JOIN orders o
+    ON c.customer_id = o.customer_id
+JOIN order_items oi
+    ON o.order_id = oi.order_id
+JOIN products p
+    ON oi.product_id = p.product_id
+GROUP BY c.customer_id, c.customer_name;
+
+-- select * from rfm_base;
+
+-- rank customers relative to each other
+CREATE VIEW rfm_scores AS
+SELECT
+    customer_id,
+    customer_name,
+    recency,
+    frequency,
+    monetary,
+
+    -- Lower recency = better
+    NTILE(4) OVER (ORDER BY recency ASC) AS r_score,
+
+    -- Higher frequency = better
+    NTILE(4) OVER (ORDER BY frequency DESC) AS f_score,
+
+    -- Higher monetary = better
+    NTILE(4) OVER (ORDER BY monetary DESC) AS m_score
+FROM rfm_base;
+
+-- Customer Segmentation
+
+CREATE VIEW customer_rfm_segments AS
+SELECT
+    customer_id,
+    customer_name,
+    recency,
+    frequency,
+    monetary,
+    r_score,
+    f_score,
+    m_score,
+
+    CASE
+        WHEN r_score = 1 AND f_score >= 3 AND m_score >= 3
+            THEN 'Loyal Customers'
+
+        WHEN r_score = 1 AND f_score = 1
+            THEN 'New Customers'
+
+        WHEN r_score >= 3 AND f_score <= 2
+            THEN 'At Risk Customers'
+
+        WHEN m_score = 4
+            THEN 'High Value Customers'
+
+        ELSE 'Regular Customers'
+    END AS customer_segment
+FROM rfm_scores;
+
+
+select * from customer_rfm_segments;
