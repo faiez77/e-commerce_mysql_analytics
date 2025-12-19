@@ -12,7 +12,17 @@ Customer Lifetime Value (CLV)
 
 Top‑performing products and categories
 
-Customer Segmentation Using RFM analysis .
+Customer Segmentation Using RFM analysis 
+[
+RFM analysis means :
+
+| Metric            | Meaning                         | Business Insight |
+| ----------------- | ------------------------------- | ---------------- |
+| R – Recency       | How recently customer purchased | Engagement       |
+| F – Frequency     | How often customer purchased    | Loyalty          |
+| M – Monetary      | How much customer spent         | Value            |
+
+]
 
 ## Business Questions Answered
 - How is monthly revenue trending?
