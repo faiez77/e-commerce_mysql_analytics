@@ -48,7 +48,7 @@ Two fields are reasonable synthesized proxies, disclosed for transparency:
 ## Schema
 
 Six normalized tables: `customers`, `products`, `orders`, `order_items`, `payments`, `reviews`.
-See [`schema.sql`](schema.sql) for full DDL with foreign keys.
+See [`sql/schema.sql`](sql/schema.sql) for full DDL with foreign keys.
 
 ## How to Run
 
@@ -77,9 +77,19 @@ See [`schema.sql`](schema.sql) for full DDL with foreign keys.
 
 Full queries: [`analysis_queries.sql`](analysis_queries.sql)
 
+## Verified Results
+
+**Repeat purchase rate — the corrected headline number:**
+
+![Repeat purchase rate](repeat_purchase_rate.png)
+
+**Month-over-month revenue growth:**
+
+![MoM revenue growth](mom_revenue_growth.png)
+
 ## Key Insights
 
-See [`insights.md`](insights.md) for real findings from this dataset — including the sampling-bug story above (now verified end-to-end: the corrected repeat-purchase rate of 2.91%, confirmed by direct query against the loaded MySQL database, matches the true population rate almost exactly) — plus screenshots of the actual query output. That kind of catch-and-correct story is genuinely worth walking through in an interview: it's a concrete example of validating your own work rather than trusting the first number you compute.
+See [`insights.md`](insights.md) for the full findings, all 5 result screenshots, and the sampling-bug story above (now verified end-to-end: the corrected repeat-purchase rate of 2.91%, confirmed by direct query against the loaded MySQL database, matches the true population rate almost exactly). That kind of catch-and-correct story is genuinely worth walking through in an interview: it's a concrete example of validating your own work rather than trusting the first number you compute.
 
 ## Author
 
