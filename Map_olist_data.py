@@ -1,13 +1,15 @@
 """
+map_olist_data.py
+-------------------
 Maps the real Olist Brazilian E-Commerce public dataset into the
 project's schema (customers, products, orders, order_items, payments,
 reviews), trimmed to a medium-sized sample (~10,000 orders).
 
 Key real-world data modeling decision:
   Olist's `customers` table has a `customer_id` that is actually
-  ONE-PER-ORDER, not one per person. 
-   We use customer_unique_id as our customer key
-  
+  ONE-PER-ORDER, not one per person. The real recurring customer is
+  `customer_unique_id`. We use customer_unique_id as our customer key
+
 Fields synthesized because the real dataset doesn't contain them:
   - product_name: Olist only provides a product CATEGORY, not a
     display name. We generate a readable name from category + a
@@ -16,16 +18,19 @@ Fields synthesized because the real dataset doesn't contain them:
     We approximate it as the customer's first order date (a common,
     reasonable proxy, but disclosed here as an approximation).
 
+Reproducible: fixed random seed = 42.
 """
 import pandas as pd
 import numpy as np
 from pathlib import Path
 
-RAW = Path("/home/claude/olist_raw")
-OUT = Path("/home/claude/ecommerce_project/data")
+RAW = Path("../raw")
+OUT = Path("../data")
 OUT.mkdir(parents=True, exist_ok=True)
 
 rng = np.random.default_rng(42)
+N_ORDERS_TARGET = 10000
+WINDOW_START, WINDOW_END = "2017-01-01", "2018-08-31"
 
 # ---------- load raw ----------
 orders_raw = pd.read_csv(RAW / "olist_orders_dataset.csv", parse_dates=["order_purchase_timestamp"])
@@ -36,22 +41,49 @@ reviews_raw = pd.read_csv(RAW / "olist_order_reviews_dataset.csv")
 products_raw = pd.read_csv(RAW / "olist_products_dataset.csv")
 cat_translation = pd.read_csv(RAW / "product_category_name_translation.csv")
 
-# ---------- sample ~10,000 orders from the well-populated window ----------
-WINDOW_START, WINDOW_END = "2017-01-01", "2018-08-31"
+# ---------- restrict to the well-populated date window ----------
 window_orders = orders_raw[
     (orders_raw.order_purchase_timestamp >= WINDOW_START) &
     (orders_raw.order_purchase_timestamp <= WINDOW_END)
 ].copy()
 
-N_ORDERS_TARGET = 10000
-sampled_orders = window_orders.sample(n=N_ORDERS_TARGET, random_state=42).copy()
-
-# ---------- customers: map to true unique person, sequential int id ----------
-sampled_orders = sampled_orders.merge(
+# ---------- resolve customer_id -> customer_unique_id up front ----------
+window_orders = window_orders.merge(
     customers_raw[["customer_id", "customer_unique_id", "customer_city", "customer_state"]],
     on="customer_id", how="left"
 )
 
+# ---------- sample by CUSTOMER, uniformly at random ----------
+# (not conditioned on repeat vs. one-time status -- conditioning on that,
+# e.g. "keep all repeat customers then fill with one-timers," would swap
+# one bias for another: it would make repeat customers hugely OVER-
+# represented relative to their true ~3% population share. Instead we
+# sample customers uniformly and keep each sampled customer's full order
+# history, which preserves the real population repeat-rate proportion
+# while still not splitting any customer's orders across the sample
+# boundary.)
+customer_order_counts = window_orders.groupby("customer_unique_id")["order_id"].nunique()
+all_customer_ids = customer_order_counts.index.to_numpy()
+rng.shuffle(all_customer_ids)
+
+sampled_customer_ids = []
+running_order_total = 0
+for cust in all_customer_ids:
+    if running_order_total >= N_ORDERS_TARGET:
+        break
+    sampled_customer_ids.append(cust)
+    running_order_total += customer_order_counts[cust]
+
+sampled_orders = window_orders[window_orders.customer_unique_id.isin(sampled_customer_ids)].copy()
+
+n_repeat_in_sample = (customer_order_counts.loc[sampled_customer_ids] > 1).sum()
+print(f"Customers sampled:              {len(sampled_customer_ids)}")
+print(f"Repeat customers in sample:     {n_repeat_in_sample} "
+      f"({round(n_repeat_in_sample/len(sampled_customer_ids)*100,2)}% of sample)")
+print(f"True population repeat rate:    {round((customer_order_counts>1).mean()*100,2)}%")
+print(f"Total orders in sample:          {len(sampled_orders)}")
+
+# ---------- customers: map to true unique person, sequential int id ----------
 unique_customers = sampled_orders["customer_unique_id"].unique()
 cust_id_map = {u: i + 1 for i, u in enumerate(unique_customers)}
 sampled_orders["mapped_customer_id"] = sampled_orders["customer_unique_id"].map(cust_id_map)
@@ -82,6 +114,7 @@ orders_out["order_date"] = orders_out["order_date"].dt.date.astype(str)
 order_id_map = {oid: i + 1 for i, oid in enumerate(orders_out["order_id"].unique())}
 orders_out["order_id"] = orders_out["order_id"].map(order_id_map)
 orders_out = orders_out.sort_values("order_id")
+orders_out["order_status"] = orders_out["order_status"].str.title()
 
 # ---------- order_items ----------
 items_sample = items_raw[items_raw.order_id.isin(order_id_map.keys())].copy()
@@ -114,7 +147,6 @@ products_out["category"] = products_out["product_category_name_english"].apply(c
 products_out["product_name"] = products_out.apply(
     lambda r: f"{clean_cat(r['product_category_name_english'])} Item #{r['product_id'][:6]}", axis=1
 )
-# price = average selling price observed for that product in the sample
 avg_price = items_sample.groupby("mapped_product_id").price.mean()
 products_out["mapped_product_id"] = products_out["product_id"].map(product_id_map)
 products_out["price"] = products_out["mapped_product_id"].map(avg_price).round(2)
@@ -123,10 +155,9 @@ products_out = products_out[["mapped_product_id", "product_name", "category", "p
 products_out.columns = ["product_id", "product_name", "category", "price"]
 products_out = products_out.sort_values("product_id")
 
-# ---------- payments (aggregate multi-row splits into one row per order) ----------
+# ---------- payments ----------
 payments_sample = payments_raw[payments_raw.order_id.isin(order_id_map.keys())].copy()
 payments_sample["order_id"] = payments_sample["order_id"].map(order_id_map)
-# dominant payment_type = the one with the highest value on that order
 idx = payments_sample.groupby("order_id")["payment_value"].idxmax()
 dominant_type = payments_sample.loc[idx, ["order_id", "payment_type"]]
 agg = payments_sample.groupby("order_id").agg(
@@ -144,14 +175,11 @@ reviews_sample = reviews_raw[reviews_raw.order_id.isin(order_id_map.keys())].cop
 reviews_sample["order_id"] = reviews_sample["order_id"].map(order_id_map)
 reviews_sample = reviews_sample.dropna(subset=["order_id"])
 reviews_sample["order_id"] = reviews_sample["order_id"].astype(int)
-reviews_sample = reviews_sample.drop_duplicates(subset=["order_id"])  # 1 review per order for our schema
+reviews_sample = reviews_sample.drop_duplicates(subset=["order_id"])
 reviews_out = reviews_sample[["order_id", "review_score", "review_creation_date"]].reset_index(drop=True).copy()
 reviews_out.insert(0, "review_id", range(1, len(reviews_out) + 1))
 reviews_out["review_date"] = pd.to_datetime(reviews_out["review_creation_date"]).dt.date.astype(str)
 reviews_out = reviews_out[["review_id", "order_id", "review_score", "review_date"]]
-
-# also fix order_status casing to match a clean readable ENUM set, keep real values
-orders_out["order_status"] = orders_out["order_status"].str.title()
 
 # ---------- write ----------
 customers_out.to_csv(OUT / "customers.csv", index=False)
@@ -161,6 +189,7 @@ order_items_out.to_csv(OUT / "order_items.csv", index=False)
 payments_out.to_csv(OUT / "payments.csv", index=False)
 reviews_out.to_csv(OUT / "reviews.csv", index=False)
 
+print()
 print("customers   :", len(customers_out))
 print("products    :", len(products_out))
 print("orders      :", len(orders_out))
